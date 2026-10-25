@@ -78,6 +78,12 @@ nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:#fff;b
 nav button{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;font-size:11px;font-weight:700;padding:8px 0;min-height:52px;color:var(--muted)}
 nav button.on{color:var(--accent)}
 .toast{position:absolute;left:16px;right:16px;bottom:calc(92px + env(safe-area-inset-bottom));background:var(--ink);color:#fff;border-radius:12px;padding:12px 14px;font-size:14px;font-weight:600}
+.overlay{position:absolute;inset:0;background:rgba(20,26,22,.45);display:flex;align-items:flex-end;z-index:10}
+.sheet{background:var(--bg);width:100%;max-height:92%;overflow-y:auto;border-radius:22px 22px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:12px;box-shadow:0 -8px 30px rgba(0,0,0,.15)}
+.sheet h2{font-size:20px;font-weight:800;margin:0}
+.radio{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--field);background:#fff;font-size:15px;font-weight:700;color:var(--ink)}
+.radio input{accent-color:var(--accent);width:18px;height:18px;margin:0}
+.err{color:#7A3517;font-size:13px;font-weight:600}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 </style>
 </head>
@@ -200,10 +206,13 @@ nav button.on{color:var(--accent)}
     var X0 = 34, X1 = 332, Y0 = 10, Y1 = 186;
     var pts = [], up = [], dn = [], xl = [], xTitle, bandLabel, yMin = 0, yMax = 10, step = 5;
     if (c.adultMode) {
-      var tEnd = Date.parse(TODAY), tStart = tEnd - 365 * DAY;
-      var win = c.ws.filter(function (e) { return Date.parse(e.date) >= tStart; });
-      tStart = win.length ? Math.min(Date.parse(win[0].date), tEnd - 60 * DAY) : tEnd - 180 * DAY;
-      var span = tEnd - tStart; tStart -= span * 0.04; tEnd += span * 0.04;
+      // window starts at the first entry (max. 12 months back) and runs at least 6 months forward
+      var now = Date.parse(TODAY), cut = now - 365 * DAY;
+      var win = c.ws.filter(function (e) { return Date.parse(e.date) >= cut; });
+      var older = win.length < c.ws.length;
+      var tStart = win.length ? Date.parse(win[0].date) : now;
+      var tEnd = Math.max(now, win.length ? Date.parse(win[win.length - 1].date) : now, tStart + 182 * DAY);
+      var span = tEnd - tStart; tStart -= span * 0.03; tEnd += span * 0.03;
       var sxT = function (t) { return X0 + (t - tStart) / (tEnd - tStart) * (X1 - X0); };
       var lo = d.adult * 0.95, hi = d.adult * 1.05;
       pts = win.map(function (e) { return { x: sxT(Date.parse(e.date)), kg: e.kg, lo: lo, hi: hi }; });
@@ -217,7 +226,7 @@ nav button.on{color:var(--accent)}
       var d0 = new Date(tStart), cur = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() + 1, 1);
       var every = (tEnd - tStart) / (30.44 * DAY) > 7 ? 2 : 1, n = 0;
       while (cur <= tEnd) { var dt = new Date(cur); if (n % every === 0) xl.push({ x: sxT(cur), t: MN[dt.getUTCMonth()] }); n++; cur = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 1); }
-      xTitle = 'Letzte 12 Monate'; bandLabel = 'Zielbereich (' + kgText(d.adult) + ' kg ±5 %)';
+      xTitle = older ? 'Letzte 12 Monate' : 'Seit dem ersten Eintrag'; bandLabel = 'Zielbereich (' + kgText(d.adult) + ' kg ±5 %)';
     } else {
       var mMax = Math.max(8, Math.ceil(c.ageM + 1));
       var sxM = function (m) { return X0 + (m / mMax) * (X1 - X0); };
@@ -278,7 +287,7 @@ nav button.on{color:var(--accent)}
   function viewHome(d, c) {
     var lp = c.photos[0];
     var h = '';
-    if (d.example) h += '<div class="notice"><b>Willkommen!</b> Das ist ein Beispielhund mit echten Beispieldaten. Lege über das Profil-Symbol oben rechts deinen eigenen Hund an. Alles bleibt nur auf diesem Gerät gespeichert.</div>';
+    if (d.example) h += '<div class="notice"><b>Willkommen!</b> Das ist ein Beispielhund mit echten Beispieldaten. Lege deinen eigenen Hund an – alles bleibt nur auf diesem Gerät gespeichert.<div style="margin-top:10px"><button class="btn" data-act="addDog">+ Eigenen Hund anlegen</button></div></div>';
     h += '<section class="card big" style="display:flex;flex-direction:column;gap:10px">' +
       '<span class="label">Aktuelles Gewicht · ' + (c.has ? dm(c.last.date) : '–') + '</span>' +
       '<div class="row" style="align-items:baseline;gap:8px"><span style="font-size:44px;font-weight:800;letter-spacing:-1px">' + (c.has ? de(c.last.kg, 1) : '–') + '</span><span style="font-size:18px;font-weight:600;color:var(--muted)">kg</span></div>' +
@@ -385,11 +394,31 @@ nav button.on{color:var(--accent)}
       '<button class="btn ghost" data-act="resetAll">Alle Daten zurücksetzen</button></section>';
   }
 
+  function viewAddDog() {
+    return '<div class="overlay" data-act="closeModal"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ndTitle" data-stop="1">' +
+      '<div class="row" style="justify-content:space-between"><h2 id="ndTitle">Neuen Hund anlegen</h2><button class="del" data-act="closeModal" aria-label="Schließen" style="font-size:24px">×</button></div>' +
+      '<label class="lbl">Name<input id="ndName" class="field" type="text" autocomplete="off" placeholder="z. B. Luna"></label>' +
+      '<label class="lbl">Rasse<input id="ndBreed" class="field" type="text" autocomplete="off" placeholder="z. B. Leavitt Bulldog"></label>' +
+      '<label class="lbl">Geburtsdatum<input id="ndBirth" class="field" type="date" max="' + TODAY + '"></label>' +
+      '<div class="lbl">Geschlecht<div class="seg"><label class="radio"><input type="radio" name="ndSex" id="ndSexF" value="f" checked>Hündin</label><label class="radio"><input type="radio" name="ndSex" id="ndSexM" value="m">Rüde</label></div></div>' +
+      '<label class="lbl">Erwartetes Endgewicht bzw. Zielgewicht (kg)<input id="ndAdult" class="field" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 27 oder 3,5"></label>' +
+      '<span class="small">Tipp: Bei Welpen das Gewicht der Elterntiere als Anhaltspunkt nehmen.</span>' +
+      '<div class="card" style="display:flex;flex-direction:column;gap:8px"><span style="font-size:14px;font-weight:700">Erstes Gewicht (optional)</span>' +
+      '<div class="row" style="gap:8px"><label class="lbl" style="flex:1;min-width:0">Datum<input id="ndWDate" class="field" type="date" value="' + TODAY + '" max="' + TODAY + '"></label>' +
+      '<label class="lbl" style="flex:0 0 90px">kg<input id="ndWKg" class="field" type="text" inputmode="decimal" autocomplete="off" placeholder="14,2"></label></div></div>' +
+      (ui.modalErr ? '<span class="err" role="alert">' + esc(ui.modalErr) + '</span>' : '') +
+      '<div class="row" style="gap:10px"><button class="btn ghost" style="flex:1" data-act="closeModal">Abbrechen</button><button class="btn" style="flex:1.4" data-act="createDog">Hund anlegen</button></div>' +
+      '</div></div>';
+  }
+
   // ---------- render ----------
   var app = document.getElementById('app');
   function render() {
     var main = app.querySelector('main');
     var keep = main && main.dataset.tab === ui.tab ? main.scrollTop : 0;
+    // keep typed values of id'd inputs across re-renders
+    var vals = {}, focusId = document.activeElement && document.activeElement.id;
+    Array.prototype.forEach.call(app.querySelectorAll('input[id]'), function (el) { if (el.type !== 'file') vals[el.id] = el.type === 'radio' ? el.checked : el.value; });
     var d = dog(), c = compute(d);
     var view = ui.tab === 'weight' ? viewWeight(d, c) : ui.tab === 'barf' ? viewBarf(d, c) : ui.tab === 'photo' ? viewPhoto(d, c) : ui.tab === 'profile' ? viewProfile(d, c) : viewHome(d, c);
     var tab = function (k, label, icon) { return '<button class="' + (ui.tab === k ? 'on' : '') + '" data-act="tab:' + k + '"' + (ui.tab === k ? ' aria-current="page"' : '') + '>' + icon + label + '</button>'; };
@@ -398,8 +427,11 @@ nav button.on{color:var(--accent)}
       '<button class="iconbtn" data-act="tab:profile" aria-label="Hunde verwalten">' + IC.user + '</button></header>' +
       '<main data-tab="' + ui.tab + '">' + view + '</main>' +
       (ui.toast ? '<div class="toast" role="status">' + esc(ui.toast) + '</div>' : '') +
-      '<nav aria-label="Hauptnavigation">' + tab('home', 'Übersicht', IC.home) + tab('weight', 'Gewicht', IC.weight) + tab('barf', 'BARF', IC.barf) + tab('photo', 'Statur', IC.cam) + '</nav>';
+      '<nav aria-label="Hauptnavigation">' + tab('home', 'Übersicht', IC.home) + tab('weight', 'Gewicht', IC.weight) + tab('barf', 'BARF', IC.barf) + tab('photo', 'Statur', IC.cam) + '</nav>' +
+      (ui.modal === 'addDog' ? viewAddDog() : '');
     var m2 = app.querySelector('main'); if (m2) m2.scrollTop = keep;
+    Object.keys(vals).forEach(function (id) { var el = document.getElementById(id); if (!el) return; if (el.type === 'radio') el.checked = vals[id]; else el.value = vals[id]; });
+    if (focusId) { var f = document.getElementById(focusId); if (f && f.focus) f.focus(); }
   }
   function flash(msg) { ui.toast = msg; render(); clearTimeout(toastTimer); toastTimer = setTimeout(function () { ui.toast = ''; render(); }, 2200); }
   function upd(fn) { fn(dog()); save(); render(); }
@@ -414,6 +446,7 @@ nav button.on{color:var(--accent)}
         if (!dt || !(kg > 0 && kg < 150)) { flash('Bitte Datum und Gewicht eingeben'); return; }
         if (d.example) { flash('Beispielhund: bitte eigenen Hund anlegen'); return; }
         d.weights = d.weights.filter(function (e) { return e.date !== dt; }).concat([{ date: dt, kg: kg }]);
+        document.getElementById('nwKg').value = '';
         save(); flash('Gewicht gespeichert'); break;
       }
       case 'delWeight': if (d.example) { flash('Beispielhund kann nicht bearbeitet werden'); return; } upd(function (x) { x.weights = x.weights.filter(function (e) { return e.date !== arg; }); }); break;
@@ -427,10 +460,26 @@ nav button.on{color:var(--accent)}
         ui.photoDraft = null; save(); flash('Eintrag mit BCS ' + ui.bcsPick + ' gespeichert'); break;
       case 'delPhoto': if (d.example) { flash('Beispielhund kann nicht bearbeitet werden'); return; } upd(function (x) { x.photos = x.photos.filter(function (e) { return e.date !== arg; }); }); break;
       case 'pickDog': data.dogIdx = parseInt(arg, 10); save(); ui.tab = 'home'; render(); break;
-      case 'addDog': {
-        var nd = { id: 'd' + Date.now(), name: 'Mein Hund', breed: '', sex: 'f', birth: addDays(TODAY, -70), adult: 20, pct: null, weights: [], photos: [] };
-        data.dogs.push(nd); data.dogIdx = data.dogs.length - 1; save(); ui.tab = 'profile'; render(); app.querySelector('main').scrollTop = 0;
-        flash('Neuer Hund angelegt – bitte Daten anpassen'); break;
+      case 'addDog':
+        ui.modal = 'addDog'; ui.modalErr = ''; render();
+        setTimeout(function () { var n = document.getElementById('ndName'); if (n) n.focus(); }, 30);
+        break;
+      case 'closeModal': ui.modal = null; ui.modalErr = ''; render(); break;
+      case 'createDog': {
+        var v = function (id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
+        var nm = v('ndName'), br = v('ndBreed'), bd = v('ndBirth'), ad = parseNum(v('ndAdult'));
+        var sx = document.getElementById('ndSexM').checked ? 'm' : 'f';
+        var wd = v('ndWDate'), wkRaw = v('ndWKg'), wk = parseNum(wkRaw);
+        var err = !nm ? 'Bitte einen Namen eingeben.' : !bd ? 'Bitte das Geburtsdatum eingeben.' : bd > TODAY ? 'Das Geburtsdatum liegt in der Zukunft.' :
+          !(ad >= 0.5 && ad <= 100) ? 'Bitte ein End- bzw. Zielgewicht zwischen 0,5 und 100 kg eingeben.' :
+          (wkRaw && !(wk > 0 && wk < 150)) ? 'Das erste Gewicht ist ungültig.' : (wkRaw && !wd) ? 'Bitte ein Datum zum ersten Gewicht eingeben.' :
+          (wkRaw && wd < bd) ? 'Das erste Gewicht liegt vor dem Geburtsdatum.' : '';
+        if (err) { ui.modalErr = err; render(); return; }
+        var nd = { id: 'd' + Date.now(), name: nm, breed: br, sex: sx, birth: bd, adult: Math.round(ad * 10) / 10, pct: null,
+          weights: wkRaw ? [{ date: wd, kg: wk }] : [], photos: [] };
+        data.dogs.push(nd); data.dogIdx = data.dogs.length - 1; save();
+        ui.modal = null; ui.modalErr = ''; ui.tab = 'home';
+        flash('„' + nm + '“ angelegt'); break;
       }
       case 'delDog':
         if (!confirm('„' + d.name + '“ mit allen Einträgen löschen?')) return;
@@ -446,6 +495,8 @@ nav button.on{color:var(--accent)}
 
   app.addEventListener('click', function (e) {
     var el = e.target.closest('[data-act]'); if (!el) return;
+    // clicks inside the sheet must not close it via the backdrop
+    if (el.classList.contains('overlay') && e.target.closest('[data-stop]')) return;
     var a = el.getAttribute('data-act'), i = a.indexOf(':');
     act(i < 0 ? a : a.slice(0, i), i < 0 ? null : a.slice(i + 1));
   });
@@ -465,6 +516,8 @@ nav button.on{color:var(--accent)}
 
   app.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && e.target.id === 'nwKg') { e.preventDefault(); act('addWeight'); }
+    if (ui.modal && e.key === 'Escape') { act('closeModal'); }
+    if (ui.modal && e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); act('createDog'); }
   });
 
   function readPhoto(file) {
